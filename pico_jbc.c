@@ -6,9 +6,13 @@
  */
 
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
 #include "pico/bootrom.h"
+#include "hardware/structs/qmi.h"
+#include "hardware/structs/xip_ctrl.h"
 #include "hardware/clocks.h"
 #include "tusb.h"
 
@@ -19,8 +23,92 @@
 
 #define COMMAND_BUFFER_LENGTH  127
 
+// 0x1C000000 is uncached, untranslated CS0
+// 0x1D000000 is uncached, untranslated CS1
+#define XIP_BASE_ADDRESS   0x1D000000
+
 jbc_uf2_hdr_t *juf2 = (jbc_uf2_hdr_t *)JUF2_ADDRESS;
 const char *delimiters = ", \t";
+
+int nextInt() {
+  char * nptr = strtok(NULL, delimiters);
+  if (nptr == NULL) {
+    return -1;
+  } else {
+    char * endptr = NULL;
+    unsigned long ul = strtoul(nptr, &endptr, 0);
+    if (nptr == endptr) {
+      return -1;
+    } else {
+      return ul;
+    }
+  }
+}
+
+void xip_init() {
+  gpio_set_function(0, GPIO_FUNC_XIP_CS1); // CS for FPGA XIP
+  xip_ctrl_hw->ctrl|=XIP_CTRL_WRITABLE_M1_BITS;
+//  qmi_hw->m[1].timing = 0x02; // use default divide by 4 clock
+  qmi_hw->m[1].rfmt = ( 0                                  << QMI_M1_RFMT_DTR_LSB
+                      | QMI_M1_RFMT_DUMMY_LEN_VALUE_8      << QMI_M1_RFMT_DUMMY_LEN_LSB
+                      | QMI_M1_RFMT_SUFFIX_LEN_VALUE_NONE  << QMI_M1_RFMT_SUFFIX_LEN_LSB 
+                      | QMI_M1_RFMT_PREFIX_LEN_VALUE_8     << QMI_M1_RFMT_PREFIX_LEN_LSB 
+                      | QMI_M1_RFMT_DATA_WIDTH_VALUE_Q     << QMI_M1_RFMT_DATA_WIDTH_LSB 
+                      | QMI_M1_RFMT_DUMMY_WIDTH_VALUE_Q    << QMI_M1_RFMT_DUMMY_WIDTH_LSB 
+                      | QMI_M1_RFMT_SUFFIX_WIDTH_VALUE_Q   << QMI_M1_RFMT_SUFFIX_WIDTH_LSB 
+                      | QMI_M1_RFMT_ADDR_WIDTH_VALUE_Q     << QMI_M1_RFMT_ADDR_WIDTH_LSB 
+                      | QMI_M1_RFMT_PREFIX_WIDTH_VALUE_Q   << QMI_M1_RFMT_PREFIX_WIDTH_LSB
+  );
+  qmi_hw->m[1].rcmd = 0x03; // use default 0x03 cmd
+  qmi_hw->m[1].wfmt = ( 0                                  << QMI_M1_WFMT_DTR_LSB 
+                      | QMI_M1_WFMT_DUMMY_LEN_VALUE_NONE   << QMI_M1_WFMT_DUMMY_LEN_LSB 
+                      | QMI_M1_WFMT_SUFFIX_LEN_VALUE_NONE  << QMI_M1_WFMT_SUFFIX_LEN_LSB 
+                      |	QMI_M1_WFMT_PREFIX_LEN_VALUE_8     << QMI_M1_WFMT_PREFIX_LEN_LSB 
+                      |	QMI_M1_WFMT_DATA_WIDTH_VALUE_Q     << QMI_M1_WFMT_DATA_WIDTH_LSB 
+                      |	QMI_M1_WFMT_DUMMY_WIDTH_VALUE_Q    << QMI_M1_WFMT_DUMMY_WIDTH_LSB 
+                      |	QMI_M1_WFMT_SUFFIX_WIDTH_VALUE_Q   << QMI_M1_WFMT_SUFFIX_WIDTH_LSB 
+                      |	QMI_M1_WFMT_ADDR_WIDTH_VALUE_Q     << QMI_M1_WFMT_ADDR_WIDTH_LSB 
+                      |	QMI_M1_WFMT_PREFIX_WIDTH_VALUE_Q   << QMI_M1_WFMT_PREFIX_WIDTH_LSB
+  );
+  qmi_hw->m[1].wcmd = 0x02; // use default 0x02 cmd
+  
+}
+
+void xip_read() {
+  int addr = nextInt();
+  int cnt = nextInt();
+  if ((addr >= 0) & (cnt >= 0)) {
+    volatile uint8_t *xip_ptr = (volatile uint8_t *)(XIP_BASE_ADDRESS + addr);
+    printf("\nRead %d bytes from 0x%X\n", cnt, addr);
+    while (cnt > 0) {
+      printf("0x%02X\n", *xip_ptr);
+      *xip_ptr++;
+      cnt--;
+    }
+  } else {
+    printf("\n! Bad read command\n");
+  }
+}
+
+void xip_write() {
+  int addr = nextInt();
+  int cnt = 0;
+  if (addr >= 0) {
+    volatile uint8_t *xip_ptr = (volatile uint8_t *)(XIP_BASE_ADDRESS + addr);
+    int wdata = nextInt();
+    printf("\nWriting to addr 0x%08X\n", addr);
+    while (wdata >=0) {
+      *xip_ptr = wdata;
+      printf("0x%02X\n", wdata);
+      *xip_ptr++;
+      wdata = nextInt();
+      cnt++;
+    }
+    printf("Wrote %d bytes\n", cnt);
+  } else {
+    printf("\n! Bad write address\n");
+  }
+}
 
 void process_command(char *buf) {
   char *command = strtok(buf, delimiters);
@@ -29,6 +117,14 @@ void process_command(char *buf) {
     case 'H':
     case 'h':
       printf("JBC Player Help\n");
+      break;
+    case 'R':
+    case 'r':
+      xip_read();
+      break;
+    case 'W':
+    case 'w':
+      xip_write();
       break;
     case 'D':
     case 'd':
@@ -39,11 +135,6 @@ void process_command(char *buf) {
     case 'i':
       printf("Check IDCODE\n");
       jbi_play(juf2, "CHECK_IDCODE");
-      break;
-    case 'B':
-    case 'b':
-      printf("Blank Check\n");
-      jbi_play(juf2, "BLANKCHECK");
       break;
     case 'C':
     case 'c':
@@ -75,10 +166,10 @@ void process_command(char *buf) {
       printf("Default Action\n");
       jbi_play(juf2, juf2->action);
       break;
-    case 'R':
-    case 'r':
-      printf("Reseting\n");
-	  reset_usb_boot(1<<PIN_LED, 0);
+    case 'B':
+    case 'b':
+      printf("Reseting to bootloader\n");
+	    reset_usb_boot(1<<PIN_LED, 0);
       break;
     default:
       printf("Unknown command:  %s\n", command);
@@ -86,16 +177,17 @@ void process_command(char *buf) {
 #ifdef CYCLOMOD
   printf("\nCycloMod");
 #endif
-  printf("\nJBC Player Commands:\n");
+  printf("\nXIP Commands:\n");
+  printf("  R/r Read:         read XIP address\n");
+  printf("  W/w Write:        write XIP address\n");
   printf("  A/a Action:       perform default action\n");
-  printf("  B/b Blank Check:  check if device is blank\n");
+  printf("  B/b Bootloader:   reset to bootloader\n");
   printf("  C/c Configure:    configure device\n");
   printf("  D/d Details:      display JBC details\n");
   printf("  E/e Erase:        erase device\n");
   printf("  H/h Help:         print command help\n");
   printf("  I/i IDCODE:       get device IDCODE\n");
   printf("  P/p Program:      program device\n");
-  printf("  R/r Reset:        reset to bootloader\n");
   printf("  U/u Usercode:     read USERCODE\n");
   printf("  V/v Verify:       verify device\n");
 }
@@ -105,6 +197,7 @@ int main() {
 
     stdio_init_all();
     jbi_init(TRUE);
+    xip_init();
 
 #ifdef CYCLOMOD
     clock_gpio_init(PIN_CLKOUT, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_XOSC_CLKSRC, 1);
