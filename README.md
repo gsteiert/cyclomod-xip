@@ -1,20 +1,18 @@
-# pico-jbc
-Altera JBC implementation for Raspberry Pi Pico boards
+# CycloMod XIP
 
-This is currently working with Pico, Pico2 and CycloMod
-Merged .uf2 files are presently only working with RP2040 and RP2350
+This builds on Pico-JBC, adding XIP support for communication with the Cyclone 10LP on the CycloMod board.
 
+## CycloMod RTL
 
-## Pico / Pico 2
+The provided CycloMod RTL project implements a dual port memory with one port connected to the XIP interface.  The second port is connected to a PWM so you can see the effect of writes on the USR LED.
 
-* Build the project to create pico_jbc.uf2
-* Generate uncompressed JBC file
-* Add jbc file to uf2 file (0x10020000 base address)
-* drag-n-drop combined .uf2 file onto RP drive
+32KB of memory are implemented.
 
-```
-python3 util/jbcuf2.py -u build/pico_jbc.uf2 -b 0x10020000 -j path-to-image.jbc -d "description" -a "PROGRAM" -o output.uf2
-```
+The customized firmware includes a memory test function using PRBS sequence.
+
+## pico-jbc
+
+Altera JBC implementation for Raspberry Pi Pico boards, adapted (forked) for use with CycloMod board
 
 ## CycloMod
 
@@ -31,7 +29,6 @@ python3 util/jbcuf2.py -u build/pico_jbc.uf2 -b 0x10F00000 -j path-to-image.jbc 
 
 Use jbc2u.py to generate a stand alone .uf2 file to load the JBC file into flash
 
-* Use family -f 0xe48bff56 for RP2040 
 * Use family -f 0xe48bff57 for RP2350 
 
 ```
@@ -44,18 +41,16 @@ python3 util/jbc2u.py -f 0xe48bff57 -b 0x10F00000 -j path-to-image.jbc -d "descr
 
 jbcuf2.py will automatically use the family from the provided .uf2 file.
 Jbc2u.py requires manual setting:
- * RP2040:  0xe48bff56
  * RP2350:  0xe48bff57
 
 ### -b Base Address
 
 This must match the `JUF2_ADDRESS` defined in jbipico.h
-For using Pico and Pico2 boards as a programmer, use 0x1002000 to provide as much space as possible for FPGA JBC images.
 For CycloMod, the FPGA image should fit in the top 1MB, so use 0x10F00000 to leave the rest for RP2350 and other data.
 
 ### -a Default Action
 
-The default action allows you to specify an action to run immediately at startup.  Use "CONFIGURE" for SRAM based devices like Cyclone and "PROGRAM" for flash based devices like MAX10.
+The default action allows you to specify an action to run immediately at startup.  Use "CONFIGURE" for SRAM based devices like Cyclone.
 
 ### -d Description
 
