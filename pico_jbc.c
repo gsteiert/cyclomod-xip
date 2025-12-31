@@ -27,8 +27,11 @@
 // 0x1D000000 is uncached, untranslated CS1
 #define XIP_BASE_ADDRESS   0x1D000000
 
+#define MEM_TEST_RANGE     32768
+
 jbc_uf2_hdr_t *juf2 = (jbc_uf2_hdr_t *)JUF2_ADDRESS;
 const char *delimiters = ", \t";
+int qmi_speed = 0;
 
 int nextInt() {
   char * nptr = strtok(NULL, delimiters);
@@ -48,7 +51,16 @@ int nextInt() {
 void xip_init() {
   gpio_set_function(0, GPIO_FUNC_XIP_CS1); // CS for FPGA XIP
   xip_ctrl_hw->ctrl|=XIP_CTRL_WRITABLE_M1_BITS;
-//  qmi_hw->m[1].timing = 0x02; // use default divide by 4 clock
+  qmi_speed = 75;
+  qmi_hw->m[1].timing = ( 0x1   << QMI_M1_TIMING_COOLDOWN_LSB
+                        | 0x0   << QMI_M1_TIMING_PAGEBREAK_LSB
+                        | 0x1   << QMI_M1_TIMING_SELECT_SETUP_LSB
+                        | 0x0   << QMI_M1_TIMING_SELECT_HOLD_LSB
+                        | 0x0   << QMI_M1_TIMING_MAX_SELECT_LSB
+                        | 0x0   << QMI_M1_TIMING_MIN_DESELECT_LSB
+                        | 0x0   << QMI_M1_TIMING_RXDELAY_LSB
+                        | 0x2   << QMI_M1_TIMING_CLKDIV_LSB
+  );
   qmi_hw->m[1].rfmt = ( 0                                  << QMI_M1_RFMT_DTR_LSB
                       | QMI_M1_RFMT_DUMMY_LEN_VALUE_8      << QMI_M1_RFMT_DUMMY_LEN_LSB
                       | QMI_M1_RFMT_SUFFIX_LEN_VALUE_NONE  << QMI_M1_RFMT_SUFFIX_LEN_LSB 
@@ -79,7 +91,7 @@ void xip_read() {
   int cnt = nextInt();
   if ((addr >= 0) & (cnt >= 0)) {
     volatile uint8_t *xip_ptr = (volatile uint8_t *)(XIP_BASE_ADDRESS + addr);
-    printf("\nRead %d bytes from 0x%X\n", cnt, addr);
+    printf("\nRead %d bytes from 0x%08X\n", cnt, addr);
     while (cnt > 0) {
       printf("0x%02X\n", *xip_ptr);
       *xip_ptr++;
@@ -110,6 +122,33 @@ void xip_write() {
   }
 }
 
+void mem_test() {
+  int cycles = nextInt();
+  int errors = 0;
+  volatile uint8_t *xip_ptr = (volatile uint8_t *)(XIP_BASE_ADDRESS);
+  uint8_t prbs;
+  printf("QMI speed:  %d MHz\n", qmi_speed);
+  printf("Testing %d cycles of %d addresses\n", cycles, MEM_TEST_RANGE);
+  while (cycles > 0) {
+    prbs = (cycles % 127) +1;
+    int i;
+    for (i=0; i<MEM_TEST_RANGE; i++) {
+      prbs = (prbs << 1) | (((prbs >> 6) ^ (prbs >> 5)) & 1);
+      xip_ptr[i] = prbs;
+    }
+    prbs = (cycles % 127) +1;
+    for (i=0; i<MEM_TEST_RANGE; i++) {
+      prbs = (prbs << 1) | (((prbs >> 6) ^ (prbs >> 5)) & 1);
+      if (xip_ptr[i] != prbs) {
+        errors += 1;
+        printf("! Failed at address 0x%08X !\n", (i + XIP_BASE_ADDRESS));
+      }
+    }
+    cycles -= 1;
+  }
+  printf("Test completed with %d errors\n", errors);
+}
+
 void process_command(char *buf) {
   char *command = strtok(buf, delimiters);
   switch (command[0]) {
@@ -125,6 +164,11 @@ void process_command(char *buf) {
     case 'W':
     case 'w':
       xip_write();
+      break;
+    case 'M':
+    case 'm':
+      printf("Memory Test\n");
+      mem_test();
       break;
     case 'D':
     case 'd':
@@ -180,6 +224,7 @@ void process_command(char *buf) {
   printf("\nXIP Commands:\n");
   printf("  R/r Read:         read XIP address\n");
   printf("  W/w Write:        write XIP address\n");
+  printf("  M/m Memory Test:  test XIP memory\n");
   printf("  A/a Action:       perform default action\n");
   printf("  B/b Bootloader:   reset to bootloader\n");
   printf("  C/c Configure:    configure device\n");
