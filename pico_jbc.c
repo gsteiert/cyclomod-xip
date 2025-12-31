@@ -149,6 +149,24 @@ void mem_test() {
   printf("Test completed with %d errors\n", errors);
 }
 
+void led_ramp() {
+  int cycles = nextInt();
+  int ramp;
+  volatile uint8_t *led_ptr = (volatile uint8_t *)(XIP_BASE_ADDRESS +0x08);
+  printf("Ramping LED %d cycles\n", cycles);
+  while (cycles > 0) {
+    for (ramp = 0; ramp < 256; ramp++) {
+      *led_ptr = ramp;
+      sleep_ms(2);
+    }
+    for (ramp = 0; ramp < 256; ramp++) {
+      *led_ptr = 255 -ramp;
+      sleep_ms(2);
+    }
+    cycles -= 1;
+  }
+}
+
 void process_command(char *buf) {
   char *command = strtok(buf, delimiters);
   switch (command[0]) {
@@ -164,6 +182,11 @@ void process_command(char *buf) {
     case 'W':
     case 'w':
       xip_write();
+      break;
+    case 'L':
+    case 'l':
+      printf("LED Ramp\n");
+      led_ramp();
       break;
     case 'M':
     case 'm':
