@@ -117,7 +117,8 @@ def convert_to_uf2(uf2_content, jbc_content):
 # For RP2350, JBC data comes first, then firmware blocks unmodified
             elif hdi[7] > PICO_RP2040 and hdi[7] <= PICO_RP2350_A_NS:
                 familyid = PICO_RP2350
-                convert_jbc(jbc_content, 0, (jbc_blocks+1))
+# add 1 for header and 1 so it does not stop processing packets
+                convert_jbc(jbc_content, 0, (jbc_blocks+2))
                 uf2_blocks_in = len(uf2_content) // 512
                 for blockno in range(uf2_blocks_in):
                     ptr = blockno * 512
