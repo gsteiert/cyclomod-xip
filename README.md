@@ -2,6 +2,8 @@
 
 This builds on Pico-JBC, adding XIP support for communication with the Cyclone 10LP on the CycloMod board.
 
+Be sure to subscribe to the [Cyclomod Crowd Supply Campaign](https://www.crowdsupply.com/steiert-solutions/cyclomod) for updates on when and how to get CycloMod.
+
 ## CycloMod RTL
 
 The provided CycloMod RTL project implements a dual port memory with one port connected to the XIP interface.  The second port is connected to a PWM so you can see the effect of writes on the USR LED.
