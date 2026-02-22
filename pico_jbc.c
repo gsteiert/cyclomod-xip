@@ -18,8 +18,8 @@
 
 #include "jbipico.h"
 
-//#define WAIT_FOR_CONSOLE
-#define RUN_DEFAULT_ACTION
+#define WAIT_FOR_CONSOLE
+//#define RUN_DEFAULT_ACTION
 
 #define COMMAND_BUFFER_LENGTH  127
 

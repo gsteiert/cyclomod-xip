@@ -44,7 +44,7 @@ typedef unsigned long DWORD;
 
 #ifdef CYCLOMOD
 
-#define JUF2_ADDRESS   0x10F00000
+#define JUF2_ADDRESS   0x10E00000
 
 #define PIN_TCK     6
 #define PIN_TMS     5

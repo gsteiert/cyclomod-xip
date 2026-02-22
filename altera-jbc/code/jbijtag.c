@@ -1325,60 +1325,67 @@ JBI_RETURN_TYPE jbi_do_drscan
 		}
 	}
 
-	if (status == JBIC_SUCCESS)
+	if (status == JBIC_SUCCESS) 
 	{
-		if (jbi_workspace != NULL)
+		/* Avoid unnecessary contatenation buffer if possible */
+		if ((jbi_dr_preamble==0) && (jbi_dr_postamble==0) && (start_index % 8 == 0)) {
+			unsigned char *tdi_ptr = tdi_data + (start_index / 8);
+			jbi_jtag_drscan(
+				start_code,
+				count,
+				tdi_ptr,
+				NULL);
+		}
+		else
 		{
-			if (shift_count > JBIC_MAX_JTAG_DR_LENGTH)
+			if (jbi_workspace != NULL)
 			{
-				status = JBIC_OUT_OF_MEMORY;
+				if (shift_count > JBIC_MAX_JTAG_DR_LENGTH)
+				{
+					status = JBIC_OUT_OF_MEMORY;
+				}
+			}
+			else if (shift_count > jbi_dr_length)
+			{
+				alloc_chars = (shift_count + 7) >> 3;
+				jbi_free(jbi_dr_buffer);
+				jbi_dr_buffer = (unsigned char *)jbi_malloc(alloc_chars);
+
+				if (jbi_dr_buffer == NULL)
+				{
+					status = JBIC_OUT_OF_MEMORY;
+				}
+				else
+				{
+					jbi_dr_length = alloc_chars * 8;
+				}
 			}
 		}
-		else if (shift_count > jbi_dr_length)
+
+		if (status == JBIC_SUCCESS)
 		{
-			alloc_chars = (shift_count + 7) >> 3;
-			jbi_free(jbi_dr_buffer);
-			jbi_dr_buffer = (unsigned char *) jbi_malloc(alloc_chars);
+			/*
+			 *	Copy preamble data, DR data, and postamble data into a buffer
+			 */
+			jbi_jtag_concatenate_data(
+				jbi_dr_buffer,
+				jbi_dr_preamble_data,
+				jbi_dr_preamble,
+				tdi_data,
+				start_index,
+				count,
+				jbi_dr_postamble_data,
+				jbi_dr_postamble);
 
-			if (jbi_dr_buffer == NULL)
-			{
-				status = JBIC_OUT_OF_MEMORY;
-			}
-			else
-			{
-				jbi_dr_length = alloc_chars * 8;
-			}
+			/*
+			 *	Do the DRSCAN
+			 */
+			jbi_jtag_drscan(
+				start_code,
+				shift_count,
+				jbi_dr_buffer,
+				NULL);
 		}
-	}
-
-	if (status == JBIC_SUCCESS)
-	{
-		/*
-		*	Copy preamble data, DR data, and postamble data into a buffer
-		*/
-		jbi_jtag_concatenate_data
-		(
-			jbi_dr_buffer,
-			jbi_dr_preamble_data,
-			jbi_dr_preamble,
-			tdi_data,
-			start_index,
-			count,
-			jbi_dr_postamble_data,
-			jbi_dr_postamble
-		);
-
-		/*
-		*	Do the DRSCAN
-		*/
-		jbi_jtag_drscan
-		(
-			start_code,
-			shift_count,
-			jbi_dr_buffer,
-			NULL
-		);
-
 		/* jbi_jtag_drscan() always ends in DRPAUSE state */
 		jbi_jtag_state = DRPAUSE;
 	}
